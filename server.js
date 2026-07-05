@@ -4017,6 +4017,7 @@ const server = http.createServer(async (req, res) => {
       sendJSON(res, {
         lyric: (body.lrc && body.lrc.lyric) || '',
         tlyric: (body.tlyric && body.tlyric.lyric) || '',
+        roma: (body.romalrc && body.romalrc.lyric) || '',
         yrc: (body.yrc && body.yrc.lyric) || '',
         source,
       });
