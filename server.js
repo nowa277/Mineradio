@@ -30,6 +30,8 @@ const {
   playlist_create,
   playlist_detail,
   playlist_track_all,
+  album_sublist,
+  album,
   personalized,
   recommend_resource,
   recommend_songs,
@@ -53,6 +55,11 @@ const tls = require('tls');
 const { once } = require('events');
 const { fileURLToPath } = require('url');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
+const {
+  getPreferredReleaseAsset,
+  getDefaultUpdateAssetName,
+  getDefaultBeatMapCacheDir,
+} = require('./platform-utils');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -62,7 +69,52 @@ const QQ_COOKIE_FILE = process.env.QQ_COOKIE_FILE || path.join(__dirname, '.qq-c
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
-const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\MineradioCache\\beatmaps';
+const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || getDefaultBeatMapCacheDir(process.platform);
+
+const os = require('os');
+const { romanizeKoreanLyric } = require('./korean-romanizer');
+
+const LYRICS_CACHE_DIR = process.env.MINERADIO_LYRIC_CACHE_DIR || path.join(
+  process.platform === 'win32'
+    ? (fs.existsSync('D:\\') ? 'D:\\MineradioCache' : path.join(os.homedir(), '.cache', 'Mineradio'))
+    : path.join(os.homedir(), '.cache', 'Mineradio'),
+  'lyrics'
+);
+
+function ensureLyricsCacheDir() {
+  fs.mkdirSync(LYRICS_CACHE_DIR, { recursive: true });
+  return LYRICS_CACHE_DIR;
+}
+
+function getLyricsCacheFile(provider, songId) {
+  const safeId = String(songId || '').replace(/[^a-z0-9_-]+/gi, '_');
+  return path.join(ensureLyricsCacheDir(), `${provider}-${safeId}.json`);
+}
+
+function readLyricsCache(provider, songId) {
+  const file = getLyricsCacheFile(provider, songId);
+  if (!fs.existsSync(file)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeLyricsCache(provider, songId, data) {
+  const file = getLyricsCacheFile(provider, songId);
+  try {
+    fs.writeFileSync(file, JSON.stringify({
+      songId,
+      provider,
+      roma: data.roma || '',
+      savedAt: Date.now()
+    }, null, 2));
+  } catch (e) {
+    console.warn('[LyricCacheWriteFailed]', e.message);
+  }
+}
+
 const APP_PACKAGE = readPackageInfo();
 const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '0.9.11';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
@@ -364,9 +416,7 @@ function extractReleaseNotes(body) {
 }
 function pickReleaseAsset(assets) {
   const list = Array.isArray(assets) ? assets : [];
-  const preferred = list.find(a => /\.(exe|msi)$/i.test(a && a.name || ''))
-    || list.find(a => /\.(zip|7z)$/i.test(a && a.name || ''))
-    || list[0];
+  const preferred = getPreferredReleaseAsset(list, process.platform);
   if (!preferred) return null;
   const digest = assetDigestInfo(preferred);
   const candidates = uniqueDownloadCandidates(preferred.browser_download_url || '');
@@ -453,7 +503,7 @@ function normalizeManifestUpdateInfo(data) {
     ? release.notes.slice(0, 4).map(cleanReleaseLine).filter(Boolean)
     : (extractReleaseNotes(release.body || data.body).length ? extractReleaseNotes(release.body || data.body) : UPDATE_FALLBACK_NOTES);
   const assetInfo = downloadUrl ? {
-    name: asset.name || updateAssetNameFromUrl(downloadUrl) || `Mineradio-${latestVersion}-Setup.exe`,
+    name: asset.name || updateAssetNameFromUrl(downloadUrl) || getDefaultUpdateAssetName(latestVersion, process.platform),
     size: Number(asset.size || 0) || 0,
     contentType: asset.contentType || asset.content_type || '',
     downloadUrl,
@@ -508,7 +558,9 @@ function beatCacheRootInfo() {
   const dir = path.resolve(BEATMAP_CACHE_DIR);
   const root = path.parse(dir).root;
   const drive = root ? root.replace(/[\\\/]+$/, '').toUpperCase() : '';
-  const allowed = !!root && !/^C:$/i.test(drive);
+  const allowed = process.platform === 'win32'
+    ? (!!root && !/^C:$/i.test(drive))
+    : path.isAbsolute(dir);
   const available = allowed && fs.existsSync(root);
   return { dir, root, drive, allowed, available };
 }
@@ -667,7 +719,7 @@ function githubReleaseDownloadUrl(version, fileName) {
 }
 function parseLatestYmlUpdateInfo(text, reason) {
   const latestVersion = normalizeVersion(yamlScalar(text, 'version') || APP_VERSION) || APP_VERSION;
-  const assetPath = yamlScalar(text, 'path') || yamlScalar(text, 'url') || `Mineradio-${latestVersion}-Setup.exe`;
+  const assetPath = yamlScalar(text, 'path') || yamlScalar(text, 'url') || getDefaultUpdateAssetName(latestVersion, process.platform);
   const sha512 = normalizeDigest(yamlScalar(text, 'sha512'), 'sha512');
   const size = Number(yamlScalar(text, 'size') || 0) || 0;
   const releaseDate = yamlScalar(text, 'releaseDate');
@@ -706,6 +758,7 @@ function parseLatestYmlUpdateInfo(text, reason) {
   };
 }
 async function fetchLatestYmlUpdateInfo(reason) {
+  if (process.platform !== 'win32') throw updateError('LATEST_YML_UNSUPPORTED_PLATFORM');
   if (!UPDATE_CONFIG.configured || UPDATE_CONFIG.provider !== 'github') throw updateError('UPDATE_REPOSITORY_NOT_CONFIGURED');
   const latestYmlUrl = `https://github.com/${encodeURIComponent(UPDATE_CONFIG.owner)}/${encodeURIComponent(UPDATE_CONFIG.repo)}/releases/latest/download/latest.yml`;
   const candidates = uniqueDownloadCandidates(latestYmlUrl);
@@ -764,13 +817,13 @@ async function fetchLatestUpdateInfo() {
   }
 }
 function safeUpdateFileName(name, version) {
-  const raw = String(name || '').trim() || `Mineradio-${version || APP_VERSION}.exe`;
+  const raw = String(name || '').trim() || getDefaultUpdateAssetName(version || APP_VERSION, process.platform);
   const cleaned = raw
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 160);
-  return cleaned || `Mineradio-${version || APP_VERSION}.exe`;
+  return cleaned || getDefaultUpdateAssetName(version || APP_VERSION, process.platform);
 }
 function publicUpdateJob(job) {
   if (!job) return { ok: false, error: 'UPDATE_JOB_NOT_FOUND' };
@@ -3455,7 +3508,23 @@ const server = http.createServer(async (req, res) => {
       const mid = url.searchParams.get('mid') || url.searchParams.get('songmid') || '';
       const id = url.searchParams.get('id') || url.searchParams.get('qqId') || '';
       if (!mid && !id) { sendJSON(res, { provider: 'qq', error: 'Missing QQ song mid or id', lyric: '' }, 400); return; }
+
+      const songId = mid || id;
+      // 1. Check local cache first
+      const cache = readLyricsCache('qq', songId);
+
       const data = await handleQQLyric(mid, id);
+
+      if (cache && cache.roma) {
+        data.roma = cache.roma;
+      } else {
+        // 2. Generate if native roma is missing and lyrics have Korean characters
+        if (!data.roma && data.lyric && /[\uAC00-\uD7A3]/.test(data.lyric)) {
+          data.roma = romanizeKoreanLyric(data.lyric);
+          writeLyricsCache('qq', songId, data);
+        }
+      }
+
       sendJSON(res, data);
     } catch (err) {
       console.error('[QQLyric]', err);
@@ -3858,6 +3927,33 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---------- 用户收藏专辑 ----------
+  if (pn === '/api/user/albums') {
+    try {
+      const info = await requireLogin(res);
+      if (!info) return;
+      const limit = Math.max(12, Math.min(100, parseInt(url.searchParams.get('limit') || '60', 10) || 60));
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      const r = await album_sublist({ limit, offset, cookie: userCookie, timestamp: Date.now() });
+      const body = (r && r.body) || {};
+      const rawAlbums = body.data || body.albums || [];
+      const albums = (Array.isArray(rawAlbums) ? rawAlbums : []).map(item => ({
+        id: item.id,
+        name: item.name || '',
+        cover: item.picUrl || item.blurPicUrl || '',
+        artist: (item.artist && item.artist.name) || (item.artists || []).map(a => a && a.name).filter(Boolean).join(' / '),
+        size: item.size || 0,
+        publishTime: item.publishTime || 0,
+      })).filter(item => item.id && item.name);
+      const total = Number(body.count || body.total || albums.length);
+      sendJSON(res, { loggedIn: true, albums, total, hasMore: offset + albums.length < total });
+    } catch (err) {
+      console.error('[UserAlbums]', err);
+      sendJSON(res, { error: err.message, albums: [] }, 500);
+    }
+    return;
+  }
+
   // ---------- 红心状态 ----------
   if (pn === '/api/song/like/check') {
     try {
@@ -3987,11 +4083,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ---------- 歌词 ----------
   if (pn === '/api/lyric') {
     try {
       const id = url.searchParams.get('id');
       if (!id) { sendJSON(res, { error: 'Missing song id', lyric: '' }, 400); return; }
+
+      // 1. Check local cache first
+      const cache = readLyricsCache('netease', id);
+
       let body = {};
       let source = 'lyric';
       try {
@@ -4008,9 +4107,24 @@ const server = http.createServer(async (req, res) => {
         body = r.body || body || {};
         source = 'lyric';
       }
+
+      const lyricText = (body.lrc && body.lrc.lyric) || '';
+      let romaText = (body.romalrc && body.romalrc.lyric) || '';
+
+      if (cache && cache.roma) {
+        romaText = cache.roma;
+      } else {
+        // 2. Generate if native roma is missing and lyrics have Korean characters
+        if (!romaText && lyricText && /[\uAC00-\uD7A3]/.test(lyricText)) {
+          romaText = romanizeKoreanLyric(lyricText);
+          writeLyricsCache('netease', id, { roma: romaText });
+        }
+      }
+
       sendJSON(res, {
-        lyric: (body.lrc && body.lrc.lyric) || '',
+        lyric: lyricText,
         tlyric: (body.tlyric && body.tlyric.lyric) || '',
+        roma: romaText,
         yrc: (body.yrc && body.yrc.lyric) || '',
         source,
       });
@@ -4131,6 +4245,34 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---------- 专辑曲目详情 ----------
+  if (pn === '/api/album/tracks') {
+    try {
+      const id = url.searchParams.get('id');
+      if (!id) { sendJSON(res, { error: 'Missing album id', tracks: [] }, 400); return; }
+      const info = await requireLogin(res);
+      if (!info) return;
+      const r = await album({ id, cookie: userCookie, timestamp: Date.now() });
+      const body = (r && r.body) || {};
+      const meta = body.album || {};
+      const tracks = (body.songs || []).map(mapSongRecord).filter(track => track.id);
+      sendJSON(res, {
+        album: {
+          id: meta.id || id,
+          name: meta.name || '',
+          cover: meta.picUrl || meta.blurPicUrl || '',
+          artist: (meta.artist && meta.artist.name) || (meta.artists || []).map(a => a && a.name).filter(Boolean).join(' / '),
+          size: meta.size || tracks.length,
+        },
+        tracks,
+      });
+    } catch (err) {
+      console.error('[AlbumTracks]', err);
+      sendJSON(res, { error: err.message, tracks: [] }, 500);
+    }
+    return;
+  }
+
   // ---------- 封面代理 (带 CORS 头, 给 canvas 提取像素用) ----------
   if (pn === '/api/cover') {
     try {
@@ -4159,6 +4301,207 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+
+  // ---------- 本地音频元数据提取 ----------
+  if (pn === '/api/local/audio-meta' && req.method === 'POST') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const body = await readRequestBody(req);
+      const filePath = String(body.path || '').trim();
+      if (!filePath || !path.isAbsolute(filePath)) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'missing_path' }));
+        return;
+      }
+      if (!fs.existsSync(filePath)) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: 'file_not_found' }));
+        return;
+      }
+
+      // 动态 require music-metadata（纯 JS，无 native addon）
+      let mm;
+      try { mm = require('music-metadata'); }
+      catch (e) {
+        res.writeHead(501);
+        res.end(JSON.stringify({ error: 'music_metadata_unavailable', detail: e.message }));
+        return;
+      }
+
+      // 异步解析元数据，不阻塞事件循环
+      const metadata = await mm.parseFile(filePath, { duration: false, skipCovers: false });
+      const common = metadata.common || {};
+
+      // 提取封面 → Base64
+      let coverDataUrl = '';
+      const pictures = common.picture || [];
+      if (pictures.length > 0) {
+        const pic = pictures[0];
+        const mime = pic.format || 'image/jpeg';
+        const b64 = Buffer.isBuffer(pic.data) ? pic.data.toString('base64') : Buffer.from(pic.data).toString('base64');
+        coverDataUrl = `data:${mime};base64,${b64}`;
+      }
+
+      // 提取内置歌词 (ID3 USLT)
+      let builtinLyric = '';
+      const uslt = (metadata.common.lyrics || []);
+      if (uslt.length > 0) {
+        const entry = uslt[0];
+        builtinLyric = (typeof entry === 'string') ? entry : (entry.text || '');
+      }
+
+      // 尝试读取同目录同名 .lrc
+      let lrcText = '';
+      const dir = path.dirname(filePath);
+      const base = path.basename(filePath, path.extname(filePath));
+      const lrcPath = path.join(dir, base + '.lrc');
+      if (fs.existsSync(lrcPath)) {
+        try { lrcText = fs.readFileSync(lrcPath, 'utf8'); } catch (_) {}
+      }
+
+      let title = String(common.title || '').trim();
+      let artist = String((common.artists || []).join(' / ') || common.artist || '').trim();
+
+
+      if (!title) {
+        const parts = base.split(/\s*-\s*/);
+        if (parts.length >= 2) {
+          artist = parts[0].trim();
+          title = parts.slice(1).join(' - ').trim();
+        } else {
+          title = base;
+        }
+      }
+      if (!artist) {
+        artist = '本地音乐';
+      }
+
+      const result = {
+        title:        title,
+        artist:       artist,
+        album:        String(common.album || ''),
+        coverDataUrl: coverDataUrl,
+        lrc:          lrcText || builtinLyric,  // 同名 .lrc 优先，内置歌词兜底
+        lrcFromFile:  !!lrcText,
+      };
+      res.writeHead(200);
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      console.error('[LocalAudioMeta]', err);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: 'parse_failed', detail: err.message }));
+    }
+    return;
+  }
+
+  // ---------- 本地音频流式播放 (支持 Range) ----------
+  if (pn === '/api/local/file') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    try {
+      const filePath = url.searchParams.get('path');
+      if (!filePath || !path.isAbsolute(filePath)) {
+        res.writeHead(400);
+        res.end('Missing or invalid path');
+        return;
+      }
+      if (!fs.existsSync(filePath)) {
+        res.writeHead(404);
+        res.end('File not found');
+        return;
+      }
+      const stat = fs.statSync(filePath);
+      const fileSize = stat.size;
+      const range = req.headers.range;
+
+      const ext = path.extname(filePath).toLowerCase();
+      let contentType = 'audio/mpeg';
+      if (ext === '.flac') contentType = 'audio/flac';
+      else if (ext === '.wav') contentType = 'audio/wav';
+      else if (ext === '.ogg') contentType = 'audio/ogg';
+      else if (ext === '.m4a') contentType = 'audio/mp4';
+
+      if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const chunksize = (end - start) + 1;
+        const file = fs.createReadStream(filePath, { start, end });
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunksize,
+          'Content-Type': contentType,
+        });
+        file.pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': fileSize,
+          'Content-Type': contentType,
+          'Accept-Ranges': 'bytes',
+        });
+        fs.createReadStream(filePath).pipe(res);
+      }
+    } catch (err) {
+      console.error('[LocalPlay]', err);
+      res.writeHead(500);
+      res.end();
+    }
+    return;
+  }
+
+  // ---------- 本地音频目录/多文件扫描 ----------
+  if (pn === '/api/local/scan' && req.method === 'POST') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const body = await readRequestBody(req);
+      const paths = Array.isArray(body.paths) ? body.paths : [];
+      const results = [];
+
+      const supportedExts = new Set(['.mp3', '.flac', '.wav', '.ogg', '.m4a']);
+      let count = 0;
+
+      function scan(p) {
+        if (count > 1000) return;
+        if (!fs.existsSync(p)) return;
+        const stat = fs.statSync(p);
+        if (stat.isFile()) {
+          const ext = path.extname(p).toLowerCase();
+          if (supportedExts.has(ext)) {
+            count++;
+            results.push({
+              name: path.basename(p, ext),
+              path: p,
+              size: stat.size,
+              lastModified: Math.round(stat.mtimeMs || Date.now())
+            });
+          }
+        } else if (stat.isDirectory()) {
+          const files = fs.readdirSync(p);
+          for (const f of files) {
+            if (count > 1000) break;
+            scan(path.join(p, f));
+          }
+        }
+      }
+
+      for (const p of paths) {
+        if (p && path.isAbsolute(p)) {
+          scan(p);
+        }
+      }
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ files: results }));
+    } catch (err) {
+      console.error('[LocalScan]', err);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: 'scan_failed', detail: err.message }));
+    }
+    return;
+  }
+
   // ---------- 音频代理 (支持 Range) ----------
   if (pn === '/api/audio') {
     try {
@@ -4181,6 +4524,7 @@ const server = http.createServer(async (req, res) => {
     } catch (err) { console.error('[Audio]', err); res.writeHead(500); res.end(); }
     return;
   }
+
 
   // ---------- 静态资源 ----------
   if (pn === '/favicon.ico') {

@@ -176,6 +176,26 @@
 
 ## Memory Entries
 
+### 2026-07-06 - 多行舞台歌词与收藏专辑
+
+- 用户认可/要求保留：应用内歌词采用当前行突出、上下文连续、多行平滑滚动的舞台效果；翻译与罗马音共用一个字号调节；网易云收藏专辑可从左侧资料库和 Home 页进入。
+- 涉及文件：`public/index.html`、`public/stage-lyrics-window.js`、`server.js`、相关测试。
+- 关键参数/实现：当前行继续使用 YRC 逐字填充；预览行只渲染完整文本；歌词窗口按索引计算并复用行资源；翻译/罗马音字号使用统一设置；收藏专辑接口只在服务端持有网易云 Cookie。
+- 禁止回退或改坏的点：不要恢复单行直接替换；不要让短歌词动画堆积；不要把翻译当作下一句；不要在浏览器端暴露网易云 Cookie；不要破坏 3D 舞台层级和既有玻璃质感。
+
+### 2026-07-05 - 韩语歌词自动音译及本地文件夹缓存系统
+
+- 用户认可/要求保留：当第三方 API 获取的歌词中缺少 `roma` 字段且原文含韩文时，在 Node.js 后端自动进行谚音音译（罗马化）处理；生成后缓存在本地专门目录中，以提高二次切歌的加载速度。
+- 涉及文件：`korean-romanizer.js`、`test/korean-romanizer.test.js`、`server.js`。
+- 关键参数/实现：
+  1. 音译在后端路由 `/api/lyric` 和 `/api/qq/lyric` 处自动拦截，仅在 `roma` 缺失且原文含韩文字符 `[\uAC00-\uD7A3]` 时触发。
+  2. 使用纯 JS 自研状态机，通过 Unicode 公式分解音节，集成“连音 (Liaison)”、“鼻音化 (Nasalization)”和“流音化 (Lateralization)”发音同化规则。
+  3. 持久化缓存：Windows 优先使用 `D:\MineradioCache\lyrics`，无 D 盘或 Linux 统一 Fallback 缓存到 `~/.cache/Mineradio/lyrics`，存储文件格式为 `[provider]-[songId].json`。
+- 禁止回退或改坏的点：
+  1. 不要引入带 Native C++ 的外部 npm 韩文音译库，防止跨平台 Windows/Linux 打包失败。
+  2. 不能破坏原有 LRC/YRC 时间戳，只能音译文本并拼回时间轴。
+  3. 缓存目录检查必须支持盘符 Fallback，不能因无 D 盘而崩溃或无法工作。
+
 ### 2026-06-25 - 安装器路径与卸载防误删 P0 规则
 
 - 用户认可/要求保留：安装器默认优先 `D:\Mineradio`，D 不存在再 E/F/.../Z；只有电脑确实没有任何 D-Z 盘时，才放行 `C:\Mineradio`。用户手动选 C 盘时也必须按这个规则拦截。
@@ -380,3 +400,32 @@
 - 涉及文件：`docs/QQ_MUSIC_INTERFACE_NOTES.md`、`server.js`、`desktop/main.js`、`public/index.html`。
 - 关键参数/实现：区分网页账号态 `p_skey` 和播放票据 `qm_keyst`/`qqmusic_key`/`music_key`/`wxskey`；`/api/qq/login/status` 返回 `playbackKeyReady`；缺播放票据时 `104003` 归类为 `login_required`；昵称头像用 `ptnick_*` 和 `qlogo.cn` 兜底。
 - 禁止回退或改坏的点：不要再把 `p_skey` 当作完整 QQ 音乐播放授权；不要因为 QQ 资料接口 `code:1000` 就清空头像/昵称或标记未登录；修 QQ 播放前先读 `docs/QQ_MUSIC_INTERFACE_NOTES.md`。
+
+### 2026-07-05 - 舞台歌词多语言支持及重叠防抖边界
+
+- 用户认可/要求保留：舞台歌词支持原文、翻译（tlyric）和罗马音（roma）同时显示，且通过智能避让避免重叠。
+- 涉及文件：`public/index.html`、`server.js`、`public/default-user-fx-archive.json`。
+- 关键参数/实现：
+  1. 3D 舞台渲染时，基于网格边界计算高度差，使用双向防抖 `dynamicYOffset` 补偿（向上推旧句，向下推预览句）。
+  2. 匹配了歌词的时间容差（±1.0s），解决不同语言/格式造成的同步偏移。
+  3. 控制台新增了“预览歌词行数（1-3行）”设定（默认由3行减为2行，减少遮挡）。
+  4. 新增了“强制单行显示”开关（`stageLyricForceSingleLine`），令过长的宽屏外文句子不再换行，通过原有的横向挤压算法在单行内完整展现。
+- 禁止回退或改坏的点：
+  1. 不要破坏当前歌词位移时的平滑弹性避让逻辑。
+  2. 不要使用写死的翻译行高计算来代替目前的真实 boundingBox 测试。
+  3. 罗马音解析必须与翻译逻辑并行，不要把两者合并覆盖。
+  4. 不要随意撤销“强制单行显示”的逻辑（在 `makeLyricMask` 里通过覆盖 `STAGE_LYRIC_MAX_LINES` 值为 1 来实现）。
+
+### 2026-07-05 - 舞台歌词多行副歌词显示及链式防重叠布局
+
+- 用户认可/要求保留：舞台歌词的预览行/后续句也可以同时显示歌词翻译或罗马音（即多行副歌词显示），并提供独立开关 `stageLyricMultilineSub`；当多行副歌词与多行预览歌词同时开启时，通过链式动态位移算法（Chained Layout Offset）防止上下相邻两句之间发生物理重叠。
+- 涉及文件：`public/index.html`。
+- 关键参数/实现：
+  1. 新增 `fx.stageLyricMultilineSub` 配置开关，保存至本地 layout 存档。在 `readSavedLyricLayout` 进行 normalisation 兜底。
+  2. UI 面板中，“多行副歌词”与“歌词翻译”、“歌词罗马音”属于同级开关，且由于排版限制，“歌词翻译”与“歌词罗马音”保持互斥（开启其中一个会关闭另一个），但“多行副歌词”独立控制预览行是否应用翻译/罗马音。
+  3. `updateStageLyrics3D` 中实现链式动态位移计算：获取当前中心句的 Top/Bottom 边界，往后（预览句，index > 0）依次向下推，往前（历史句，index < 0）依次向上推，确保任意相邻行的间距不小于 `0.12`，计算出的偏移量记录在 `calculatedOffsets` 表中。
+  4. `tickPreviewMesh` 从 `calculatedOffsets` 读取对应的 Y 轴偏移动态平滑过渡，并在 `fx.stageLyricMultilineSub` 开启时将预览行的副歌词（`transMat`/`romaMat`）透明度目标设为 `opacityTarget`，否则设为 0。
+- 禁止回退或改坏的点：
+  1. 保证 `calculatedOffsets` 计算中的排序逻辑（下推行由小到大排序，上推行由大到小排序）不乱，避免计算前置位置错误。
+  2. 预览行的翻译/罗马音隐藏时，不要硬性将 uOpacity 设为常量 0，而是要通过 `tickPreviewMesh` 中 `subOpacityTarget = 0` 的平滑 ease 过渡，避免切歌或开关时的视觉闪烁。
+  3. 不要影响 “多行舞台歌词” 开关（`stageLyricMultiline`）和 “强制单行显示” 开关（`stageLyricForceSingleLine`）的原有职责。

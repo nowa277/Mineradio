@@ -2,6 +2,9 @@
 
 ## v1.1.1
 
+- 应用内舞台歌词升级为多行滚动队列，保留当前行逐字卡拉 OK，并支持翻译、罗马音及统一字号调节。
+- 左侧资料库与 Home 页新增网易云收藏专辑入口，支持载入专辑歌曲并直接播放。
+- 增强本地音乐元数据读取与封面处理能力。
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.
 - The installer now forces the target path into a dedicated `Mineradio` folder, blocks non-empty non-Mineradio-owned targets, and blocks C drive installs when a D-Z drive is available.
 - Existing registered installs in a dedicated `...\Mineradio` folder are adopted in place so users can run the new setup over their current installation and receive the safe uninstaller.
