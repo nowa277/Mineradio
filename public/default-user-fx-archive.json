@@ -56,6 +56,8 @@
     "lyricGlowBeat": true,
     "lyricGlowParticles": false,
     "stageLyricMultiline": true,
+    "stageLyricForceSingleLine": false,
+    "stageLyricPreviewLines": 2,
     "desktopLyrics": false,
     "desktopLyricsSize": 1,
     "desktopLyricsOpacity": 0.92,
