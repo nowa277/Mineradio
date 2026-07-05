@@ -176,6 +176,19 @@
 
 ## Memory Entries
 
+### 2026-07-05 - 韩语歌词自动音译及本地文件夹缓存系统
+
+- 用户认可/要求保留：当第三方 API 获取的歌词中缺少 `roma` 字段且原文含韩文时，在 Node.js 后端自动进行谚音音译（罗马化）处理；生成后缓存在本地专门目录中，以提高二次切歌的加载速度。
+- 涉及文件：`korean-romanizer.js`、`test/korean-romanizer.test.js`、`server.js`。
+- 关键参数/实现：
+  1. 音译在后端路由 `/api/lyric` 和 `/api/qq/lyric` 处自动拦截，仅在 `roma` 缺失且原文含韩文字符 `[\uAC00-\uD7A3]` 时触发。
+  2. 使用纯 JS 自研状态机，通过 Unicode 公式分解音节，集成“连音 (Liaison)”、“鼻音化 (Nasalization)”和“流音化 (Lateralization)”发音同化规则。
+  3. 持久化缓存：Windows 优先使用 `D:\MineradioCache\lyrics`，无 D 盘或 Linux 统一 Fallback 缓存到 `~/.cache/Mineradio/lyrics`，存储文件格式为 `[provider]-[songId].json`。
+- 禁止回退或改坏的点：
+  1. 不要引入带 Native C++ 的外部 npm 韩文音译库，防止跨平台 Windows/Linux 打包失败。
+  2. 不能破坏原有 LRC/YRC 时间戳，只能音译文本并拼回时间轴。
+  3. 缓存目录检查必须支持盘符 Fallback，不能因无 D 盘而崩溃或无法工作。
+
 ### 2026-06-25 - 安装器路径与卸载防误删 P0 规则
 
 - 用户认可/要求保留：安装器默认优先 `D:\Mineradio`，D 不存在再 E/F/.../Z；只有电脑确实没有任何 D-Z 盘时，才放行 `C:\Mineradio`。用户手动选 C 盘时也必须按这个规则拦截。
