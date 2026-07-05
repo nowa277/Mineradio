@@ -408,3 +408,17 @@
   2. 不要使用写死的翻译行高计算来代替目前的真实 boundingBox 测试。
   3. 罗马音解析必须与翻译逻辑并行，不要把两者合并覆盖。
   4. 不要随意撤销“强制单行显示”的逻辑（在 `makeLyricMask` 里通过覆盖 `STAGE_LYRIC_MAX_LINES` 值为 1 来实现）。
+
+### 2026-07-05 - 舞台歌词多行副歌词显示及链式防重叠布局
+
+- 用户认可/要求保留：舞台歌词的预览行/后续句也可以同时显示歌词翻译或罗马音（即多行副歌词显示），并提供独立开关 `stageLyricMultilineSub`；当多行副歌词与多行预览歌词同时开启时，通过链式动态位移算法（Chained Layout Offset）防止上下相邻两句之间发生物理重叠。
+- 涉及文件：`public/index.html`。
+- 关键参数/实现：
+  1. 新增 `fx.stageLyricMultilineSub` 配置开关，保存至本地 layout 存档。在 `readSavedLyricLayout` 进行 normalisation 兜底。
+  2. UI 面板中，“多行副歌词”与“歌词翻译”、“歌词罗马音”属于同级开关，且由于排版限制，“歌词翻译”与“歌词罗马音”保持互斥（开启其中一个会关闭另一个），但“多行副歌词”独立控制预览行是否应用翻译/罗马音。
+  3. `updateStageLyrics3D` 中实现链式动态位移计算：获取当前中心句的 Top/Bottom 边界，往后（预览句，index > 0）依次向下推，往前（历史句，index < 0）依次向上推，确保任意相邻行的间距不小于 `0.12`，计算出的偏移量记录在 `calculatedOffsets` 表中。
+  4. `tickPreviewMesh` 从 `calculatedOffsets` 读取对应的 Y 轴偏移动态平滑过渡，并在 `fx.stageLyricMultilineSub` 开启时将预览行的副歌词（`transMat`/`romaMat`）透明度目标设为 `opacityTarget`，否则设为 0。
+- 禁止回退或改坏的点：
+  1. 保证 `calculatedOffsets` 计算中的排序逻辑（下推行由小到大排序，上推行由大到小排序）不乱，避免计算前置位置错误。
+  2. 预览行的翻译/罗马音隐藏时，不要硬性将 uOpacity 设为常量 0，而是要通过 `tickPreviewMesh` 中 `subOpacityTarget = 0` 的平滑 ease 过渡，避免切歌或开关时的视觉闪烁。
+  3. 不要影响 “多行舞台歌词” 开关（`stageLyricMultiline`）和 “强制单行显示” 开关（`stageLyricForceSingleLine`）的原有职责。
