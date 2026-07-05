@@ -380,3 +380,18 @@
 - 涉及文件：`docs/QQ_MUSIC_INTERFACE_NOTES.md`、`server.js`、`desktop/main.js`、`public/index.html`。
 - 关键参数/实现：区分网页账号态 `p_skey` 和播放票据 `qm_keyst`/`qqmusic_key`/`music_key`/`wxskey`；`/api/qq/login/status` 返回 `playbackKeyReady`；缺播放票据时 `104003` 归类为 `login_required`；昵称头像用 `ptnick_*` 和 `qlogo.cn` 兜底。
 - 禁止回退或改坏的点：不要再把 `p_skey` 当作完整 QQ 音乐播放授权；不要因为 QQ 资料接口 `code:1000` 就清空头像/昵称或标记未登录；修 QQ 播放前先读 `docs/QQ_MUSIC_INTERFACE_NOTES.md`。
+
+### 2026-07-05 - 舞台歌词多语言支持及重叠防抖边界
+
+- 用户认可/要求保留：舞台歌词支持原文、翻译（tlyric）和罗马音（roma）同时显示，且通过智能避让避免重叠。
+- 涉及文件：`public/index.html`、`server.js`、`public/default-user-fx-archive.json`。
+- 关键参数/实现：
+  1. 3D 舞台渲染时，基于网格边界计算高度差，使用双向防抖 `dynamicYOffset` 补偿（向上推旧句，向下推预览句）。
+  2. 匹配了歌词的时间容差（±1.0s），解决不同语言/格式造成的同步偏移。
+  3. 控制台新增了“预览歌词行数（1-3行）”设定（默认由3行减为2行，减少遮挡）。
+  4. 新增了“强制单行显示”开关（`stageLyricForceSingleLine`），令过长的宽屏外文句子不再换行，通过原有的横向挤压算法在单行内完整展现。
+- 禁止回退或改坏的点：
+  1. 不要破坏当前歌词位移时的平滑弹性避让逻辑。
+  2. 不要使用写死的翻译行高计算来代替目前的真实 boundingBox 测试。
+  3. 罗马音解析必须与翻译逻辑并行，不要把两者合并覆盖。
+  4. 不要随意撤销“强制单行显示”的逻辑（在 `makeLyricMask` 里通过覆盖 `STAGE_LYRIC_MAX_LINES` 值为 1 来实现）。
