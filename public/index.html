@@ -9051,8 +9051,9 @@ function setStageLyricRowRole(mesh, relativeIndex, snap) {
   var data = mesh.userData.lyric || {};
   if (data.textMat) data.textMat.uniforms.uOpacity.value = profile.opacity;
   if (data.readabilityMat) data.readabilityMat.opacity = profile.opacity * 0.58;
-  if (data.transMat) data.transMat.uniforms.uOpacity.value = relativeIndex === 0 ? profile.opacity : 0;
-  if (data.romaMat) data.romaMat.uniforms.uOpacity.value = relativeIndex === 0 ? profile.opacity : 0;
+  var subOpacity = (relativeIndex === 0 || fx.stageLyricMultilineSub) ? profile.opacity : 0;
+  if (data.transMat) data.transMat.uniforms.uOpacity.value = subOpacity;
+  if (data.romaMat) data.romaMat.uniforms.uOpacity.value = subOpacity;
 }
 
 function syncStageLyricWindow(currentIndex, options) {
@@ -9452,18 +9453,8 @@ function updateStageLyrics3D(dt) {
     var ease = 1 - Math.exp(-Math.min(0.05, Math.max(0, dt)) * 9.5);
     var opacityTarget = profile.opacity * shelfDetailLyricProfile.opacity;
     
-    var dynamicYOffset = 0;
-    if (stageLyrics.current && stageLyrics.current.userData && stageLyrics.current.userData.lyric) {
-      if (mesh.userData.relativeIndex > 0) {
-        dynamicYOffset = - (stageLyrics.current.userData.lyric.extraHeight || 0) * 0.95;
-      } else if (mesh.userData.relativeIndex < 0) {
-        var currentTop = 0.18 + (stageLyrics.current.userData.lyric.textWorldH || 0.15) * 0.5 * 0.96;
-        var requiredY = currentTop + 0.18;
-        if (profile.y < requiredY) {
-          dynamicYOffset = requiredY - profile.y;
-        }
-      }
-    }
+    var relKey = String(mesh.userData.relativeIndex);
+    var dynamicYOffset = calculatedOffsets && calculatedOffsets[relKey] !== undefined ? calculatedOffsets[relKey] : 0;
     
     mesh.position.x += (0 - mesh.position.x) * ease;
     mesh.position.y += ((profile.y + dynamicYOffset) - mesh.position.y) * ease;
@@ -9472,8 +9463,11 @@ function updateStageLyrics3D(dt) {
     mesh.scale.setScalar(nextScale);
     mesh.rotation.z += (0 - mesh.rotation.z) * ease;
     if (data.textMat) data.textMat.uniforms.uOpacity.value += (opacityTarget - data.textMat.uniforms.uOpacity.value) * ease;
-    if (data.transMat) data.transMat.uniforms.uOpacity.value += (0 - data.transMat.uniforms.uOpacity.value) * ease;
-    if (data.romaMat) data.romaMat.uniforms.uOpacity.value += (0 - data.romaMat.uniforms.uOpacity.value) * ease;
+    
+    var subOpacityTarget = fx.stageLyricMultilineSub ? opacityTarget : 0;
+    if (data.transMat) data.transMat.uniforms.uOpacity.value += (subOpacityTarget - data.transMat.uniforms.uOpacity.value) * ease;
+    if (data.romaMat) data.romaMat.uniforms.uOpacity.value += (subOpacityTarget - data.romaMat.uniforms.uOpacity.value) * ease;
+    
     if (data.readabilityMat) {
       var readabilityTarget = opacityTarget * 0.52 * shelfDetailLyricProfile.readability;
       data.readabilityMat.opacity += (readabilityTarget - data.readabilityMat.opacity) * ease;
@@ -9483,6 +9477,57 @@ function updateStageLyrics3D(dt) {
     if (data.sunMat) data.sunMat.opacity += (0 - data.sunMat.opacity) * ease;
     if (data.sparkMat) setLyricSparkOpacity(data, getLyricSparkOpacity(data) * (1 - ease));
     if (data.sparks) data.sparks.visible = getLyricSparkOpacity(data) > 0.015;
+  }
+  var calculatedOffsets = { '-1': 0, '1': 0, '2': 0, '3': 0 };
+  if (stageLyrics.current && stageLyrics.current.userData && stageLyrics.current.userData.lyric) {
+    var gap = 0.12;
+    var currentMesh = stageLyrics.current;
+    var curD = currentMesh.userData.lyric;
+    var curH = curD.textWorldH || 0.15;
+    var curE = curD.extraHeight || 0;
+    var curScale = 1.0;
+    
+    var Y_0 = currentMesh.position.y;
+    var Top_0 = Y_0 + (curH * 0.5) * curScale;
+    var Bottom_0 = Y_0 - (curH * 0.5 + curE) * curScale;
+    
+    // 1. Push down rows (relativeIndex > 0)
+    var downRows = stageLyrics.rows.filter(function(m) { return m.userData && m.userData.relativeIndex > 0; });
+    downRows.sort(function(a, b) { return a.userData.relativeIndex - b.userData.relativeIndex; });
+    
+    var prevBottom = Bottom_0;
+    downRows.forEach(function(m) {
+      var rel = m.userData.relativeIndex;
+      var d = m.userData.lyric || {};
+      var h = d.textWorldH || 0.15;
+      var e = d.extraHeight || 0;
+      var profile = stageLyricRowProfile(rel, skullMouthLyrics);
+      var scale = profile.scale || 1.0;
+      
+      var maxY = prevBottom - gap - (h * 0.5) * scale;
+      var targetY = Math.min(profile.y, maxY);
+      calculatedOffsets[String(rel)] = targetY - profile.y;
+      prevBottom = targetY - (h * 0.5 + e) * scale;
+    });
+    
+    // 2. Push up rows (relativeIndex < 0)
+    var upRows = stageLyrics.rows.filter(function(m) { return m.userData && m.userData.relativeIndex < 0; });
+    upRows.sort(function(a, b) { return b.userData.relativeIndex - a.userData.relativeIndex; });
+    
+    var prevTop = Top_0;
+    upRows.forEach(function(m) {
+      var rel = m.userData.relativeIndex;
+      var d = m.userData.lyric || {};
+      var h = d.textWorldH || 0.15;
+      var e = d.extraHeight || 0;
+      var profile = stageLyricRowProfile(rel, skullMouthLyrics);
+      var scale = profile.scale || 1.0;
+      
+      var minY = prevTop + gap + (h * 0.5 + e) * scale;
+      var targetY = Math.max(profile.y, minY);
+      calculatedOffsets[String(rel)] = targetY - profile.y;
+      prevTop = targetY + (h * 0.5) * scale;
+    });
   }
   tickMesh(stageLyrics.current, true);
   for (var rowIndex = 0; rowIndex < stageLyrics.rows.length; rowIndex++) tickPreviewMesh(stageLyrics.rows[rowIndex]);
