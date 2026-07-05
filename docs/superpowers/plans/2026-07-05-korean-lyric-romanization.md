@@ -119,7 +119,7 @@ Add logic to process deconstructed syllables list and apply phonology rules:
 ```javascript
 function applyAssimilation(syllables) {
   const results = [];
-  
+
   for (let i = 0; i < syllables.length; i++) {
     const curr = syllables[i];
     if (!curr.isHangul) {
@@ -359,13 +359,13 @@ Modify the QQ lyric handler inside `server.js` (around line 3459):
       const mid = url.searchParams.get('mid') || url.searchParams.get('songmid') || '';
       const id = url.searchParams.get('id') || url.searchParams.get('qqId') || '';
       if (!mid && !id) { sendJSON(res, { provider: 'qq', error: 'Missing QQ song mid or id', lyric: '' }, 400); return; }
-      
+
       const songId = mid || id;
       // 1. Check local cache first
       const cache = readLyricsCache('qq', songId);
-      
+
       const data = await handleQQLyric(mid, id);
-      
+
       if (cache && cache.roma) {
         data.roma = cache.roma;
       } else {
@@ -375,7 +375,7 @@ Modify the QQ lyric handler inside `server.js` (around line 3459):
           writeLyricsCache('qq', songId, data);
         }
       }
-      
+
       sendJSON(res, data);
     } catch (err) {
       console.error('[QQLyric]', err);
@@ -393,10 +393,10 @@ Modify NetEase lyric handler inside `server.js` (around line 3997):
     try {
       const id = url.searchParams.get('id');
       if (!id) { sendJSON(res, { error: 'Missing song id', lyric: '' }, 400); return; }
-      
+
       // 1. Check local cache first
       const cache = readLyricsCache('netease', id);
-      
+
       let body = {};
       let source = 'lyric';
       try {
@@ -413,10 +413,10 @@ Modify NetEase lyric handler inside `server.js` (around line 3997):
         body = r.body || body || {};
         source = 'lyric';
       }
-      
+
       const lyricText = (body.lrc && body.lrc.lyric) || '';
       let romaText = (body.romalrc && body.romalrc.lyric) || '';
-      
+
       if (cache && cache.roma) {
         romaText = cache.roma;
       } else {
@@ -426,7 +426,7 @@ Modify NetEase lyric handler inside `server.js` (around line 3997):
           writeLyricsCache('netease', id, { roma: romaText });
         }
       }
-      
+
       sendJSON(res, {
         lyric: lyricText,
         tlyric: (body.tlyric && body.tlyric.lyric) || '',

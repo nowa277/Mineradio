@@ -80,7 +80,7 @@ function parseWordHangul(word) {
 
 function applyAssimilation(syllables) {
   const results = [];
-  
+
   for (let i = 0; i < syllables.length; i++) {
     const curr = syllables[i];
     if (!curr.isHangul) {
