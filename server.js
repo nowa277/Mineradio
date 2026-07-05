@@ -68,6 +68,51 @@ const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname,
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
 const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || getDefaultBeatMapCacheDir(process.platform);
+
+const os = require('os');
+const { romanizeKoreanLyric } = require('./korean-romanizer');
+
+const LYRICS_CACHE_DIR = process.env.MINERADIO_LYRIC_CACHE_DIR || path.join(
+  process.platform === 'win32'
+    ? (fs.existsSync('D:\\') ? 'D:\\MineradioCache' : path.join(os.homedir(), '.cache', 'Mineradio'))
+    : path.join(os.homedir(), '.cache', 'Mineradio'),
+  'lyrics'
+);
+
+function ensureLyricsCacheDir() {
+  fs.mkdirSync(LYRICS_CACHE_DIR, { recursive: true });
+  return LYRICS_CACHE_DIR;
+}
+
+function getLyricsCacheFile(provider, songId) {
+  const safeId = String(songId || '').replace(/[^a-z0-9_-]+/gi, '_');
+  return path.join(ensureLyricsCacheDir(), `${provider}-${safeId}.json`);
+}
+
+function readLyricsCache(provider, songId) {
+  const file = getLyricsCacheFile(provider, songId);
+  if (!fs.existsSync(file)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeLyricsCache(provider, songId, data) {
+  const file = getLyricsCacheFile(provider, songId);
+  try {
+    fs.writeFileSync(file, JSON.stringify({
+      songId,
+      provider,
+      roma: data.roma || '',
+      savedAt: Date.now()
+    }, null, 2));
+  } catch (e) {
+    console.warn('[LyricCacheWriteFailed]', e.message);
+  }
+}
+
 const APP_PACKAGE = readPackageInfo();
 const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '0.9.11';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
@@ -3461,7 +3506,23 @@ const server = http.createServer(async (req, res) => {
       const mid = url.searchParams.get('mid') || url.searchParams.get('songmid') || '';
       const id = url.searchParams.get('id') || url.searchParams.get('qqId') || '';
       if (!mid && !id) { sendJSON(res, { provider: 'qq', error: 'Missing QQ song mid or id', lyric: '' }, 400); return; }
+      
+      const songId = mid || id;
+      // 1. Check local cache first
+      const cache = readLyricsCache('qq', songId);
+      
       const data = await handleQQLyric(mid, id);
+      
+      if (cache && cache.roma) {
+        data.roma = cache.roma;
+      } else {
+        // 2. Generate if native roma is missing and lyrics have Korean characters
+        if (!data.roma && data.lyric && /[\uAC00-\uD7A3]/.test(data.lyric)) {
+          data.roma = romanizeKoreanLyric(data.lyric);
+          writeLyricsCache('qq', songId, data);
+        }
+      }
+      
       sendJSON(res, data);
     } catch (err) {
       console.error('[QQLyric]', err);
@@ -3993,11 +4054,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ---------- 歌词 ----------
   if (pn === '/api/lyric') {
     try {
       const id = url.searchParams.get('id');
       if (!id) { sendJSON(res, { error: 'Missing song id', lyric: '' }, 400); return; }
+      
+      // 1. Check local cache first
+      const cache = readLyricsCache('netease', id);
+      
       let body = {};
       let source = 'lyric';
       try {
@@ -4014,10 +4078,24 @@ const server = http.createServer(async (req, res) => {
         body = r.body || body || {};
         source = 'lyric';
       }
+      
+      const lyricText = (body.lrc && body.lrc.lyric) || '';
+      let romaText = (body.romalrc && body.romalrc.lyric) || '';
+      
+      if (cache && cache.roma) {
+        romaText = cache.roma;
+      } else {
+        // 2. Generate if native roma is missing and lyrics have Korean characters
+        if (!romaText && lyricText && /[\uAC00-\uD7A3]/.test(lyricText)) {
+          romaText = romanizeKoreanLyric(lyricText);
+          writeLyricsCache('netease', id, { roma: romaText });
+        }
+      }
+      
       sendJSON(res, {
-        lyric: (body.lrc && body.lrc.lyric) || '',
+        lyric: lyricText,
         tlyric: (body.tlyric && body.tlyric.lyric) || '',
-        roma: (body.romalrc && body.romalrc.lyric) || '',
+        roma: romaText,
         yrc: (body.yrc && body.yrc.lyric) || '',
         source,
       });
