@@ -56,6 +56,13 @@ npm start
 
 ### Linux
 
+当前 Linux 构建支持范围：
+
+- 正式验证：Ubuntu 22.04 LTS 及以上版本，x86_64 架构
+- 预期兼容：使用 glibc 2.35 或更高版本的 Debian/Ubuntu 系桌面发行版
+- 运行方式：支持 AppImage；系统需要 FUSE 2，或使用 AppImage 解包运行模式
+- 暂不支持：ARM/aarch64、32 位 x86、Alpine Linux 等 musl 系统
+
 ```bash
 npm run build:linux:appimage
 npm run build:linux:deb
