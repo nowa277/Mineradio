@@ -211,6 +211,15 @@ body.empty-home-active.diy-mode #search-area:not(.has-results) #search-mode-tabs
 .podcast-back-btn:hover{color:#fff0bf;border-color:rgba(244,210,138,.35);background:rgba(244,210,138,.10)}
 .search-result .add-btn{width:28px;height:28px;border-radius:50%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:rgba(255,255,255,.55);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s}
 .search-result .add-btn:hover{background:rgba(0,245,212,.12);color:#eafffb;border-color:rgba(0,245,212,.34)}
+.album-search-detail{padding:12px 14px 14px;border-bottom:1px solid rgba(255,255,255,.04);background:rgba(255,255,255,.018)}
+.album-search-detail-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.album-search-detail-head img{width:58px;height:58px;border-radius:9px;object-fit:cover;background:rgba(255,255,255,.06)}
+.album-search-detail-actions{display:flex;gap:7px;margin-left:auto}
+.album-search-track{display:flex;align-items:center;gap:9px;min-height:36px;padding:5px 7px;border-radius:8px;color:rgba(255,255,255,.78);font-size:11.5px}
+.album-search-track:hover{background:rgba(255,255,255,.045)}
+.album-search-track-index{width:22px;color:rgba(255,255,255,.28);text-align:right;flex-shrink:0}
+.album-search-track-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.album-search-more{width:100%;margin-top:8px}
 
 html.simple-mode-preload #search-mode-tabs,
 html.simple-mode-preload #upload-actions,
@@ -222,6 +231,7 @@ body.simple-mode #upload-actions,
 body.simple-mode #fx-fab,
 body.simple-mode #fx-fab-hide-btn,
 body.simple-mode #fx-panel{display:none!important}
+body.simple-mode #search-area.peek #search-mode-tabs{display:flex!important}
 html.simple-mode-preload #search-area,
 body.simple-mode #search-area{--search-offset:0;left:50%;width:min(620px,calc(100vw - 56px));transform:translateX(-50%);align-items:stretch}
 body.simple-mode #search-area.peek{top:24px}
@@ -1921,6 +1931,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <button id="search-mode-song" class="active" type="button" onclick="setSearchMode('song')" aria-selected="true">All</button>
       <button id="search-mode-netease" type="button" onclick="setSearchMode('netease')" aria-selected="false">NE</button>
       <button id="search-mode-qq" type="button" onclick="setSearchMode('qq')" aria-selected="false">QQ</button>
+      <button id="search-mode-album" type="button" onclick="setSearchMode('album')" aria-selected="false">专辑</button>
       <button id="search-mode-podcast" type="button" onclick="setSearchMode('podcast')" aria-selected="false">Podcast</button>
     </div>
     <div id="search-results"></div>
@@ -2724,6 +2735,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
 
 </div>
 
+<script src="/album-search.js"></script>
 <script>
 'use strict';
 
@@ -2748,6 +2760,7 @@ var lastStrongDrop = 0;           // 用于 burst 预设的强 drop 时刻
 var lyricsLines = [], lyricsVisible = false, lyricsHasNativeKaraoke = false, lyricsTimingSource = 'none';
 var playlist = [], playQueue = [], currentIdx = -1, playing = false, playToggleBusy = false;
 var searchMode = 'song', podcastResults = [], podcastPrograms = [], podcastCurrentRadio = null;
+var albumSearchResults = [], albumSearchDetail = null, albumSearchHasMore = false;
 var loginStatus = { loggedIn: false, vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, vipLabel: '无VIP' };
 var qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0 };
 var qqLoginAutoRefreshTimer = null;
@@ -17547,6 +17560,7 @@ function avatarSrc(url) {
 // ============================================================
 var searchTimer = null;
 var searchRequestSeq = 0;
+var albumDetailRequestSeq = 0;
 var searchLastResultQuery = '';
 var SEARCH_HISTORY_STORE_KEY = 'mineradio-search-history';
 var $input = document.getElementById('search-input');
@@ -17572,6 +17586,10 @@ function clearSearchResults() {
   searchRequestSeq++;
   searchLastResultQuery = '';
   playlist = [];
+  albumSearchResults = [];
+  albumSearchDetail = null;
+  albumSearchHasMore = false;
+  albumDetailRequestSeq++;
   podcastResults = [];
   podcastPrograms = [];
   podcastCurrentRadio = null;
@@ -17631,6 +17649,7 @@ function updateSearchModeTabs() {
   var songBtn = document.getElementById('search-mode-song');
   var neteaseBtn = document.getElementById('search-mode-netease');
   var qqBtn = document.getElementById('search-mode-qq');
+  var albumBtn = document.getElementById('search-mode-album');
   var podcastBtn = document.getElementById('search-mode-podcast');
   if (songBtn) {
     songBtn.classList.toggle('active', searchMode === 'song');
@@ -17644,6 +17663,10 @@ function updateSearchModeTabs() {
     qqBtn.classList.toggle('active', searchMode === 'qq');
     qqBtn.setAttribute('aria-selected', searchMode === 'qq' ? 'true' : 'false');
   }
+  if (albumBtn) {
+    albumBtn.classList.toggle('active', searchMode === 'album');
+    albumBtn.setAttribute('aria-selected', searchMode === 'album' ? 'true' : 'false');
+  }
   if (podcastBtn) {
     podcastBtn.classList.toggle('active', searchMode === 'podcast');
     podcastBtn.setAttribute('aria-selected', searchMode === 'podcast' ? 'true' : 'false');
@@ -17651,12 +17674,12 @@ function updateSearchModeTabs() {
   if ($input) {
     $input.placeholder = searchMode === 'podcast'
       ? '搜索播客、电台...'
-      : (searchMode === 'qq' ? '搜索 QQ 音乐...' : (searchMode === 'netease' ? '搜索网易云音乐...' : '搜索歌曲、歌手...'));
+      : (searchMode === 'album' ? '搜索网易云专辑...' : (searchMode === 'qq' ? '搜索 QQ 音乐...' : (searchMode === 'netease' ? '搜索网易云音乐...' : '搜索歌曲、歌手...')));
   }
   requestAnimationFrame(updateSearchPillGlassDisplacementMap);
 }
 function setSearchMode(mode) {
-  mode = (mode === 'podcast' || mode === 'netease' || mode === 'qq') ? mode : 'song';
+  mode = (mode === 'podcast' || mode === 'album' || mode === 'netease' || mode === 'qq') ? mode : 'song';
   if (searchMode === mode) return;
   searchMode = mode;
   updateSearchModeTabs();
@@ -18056,6 +18079,140 @@ function renderSongSearchResults(songs) {
   if (window.gsap) animateListItems($results, '.search-result', { x: 0, y: 6, stagger: 0.012, duration: 0.18, limit: 18 });
 }
 
+function albumSearchMetaText(album) {
+  var bits = [];
+  if (album && album.artist) bits.push(album.artist);
+  if (album && album.publishTime) {
+    var date = new Date(Number(album.publishTime));
+    if (!isNaN(date.getTime())) bits.push(date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0'));
+  }
+  if (album && album.size) bits.push(album.size + ' 首');
+  return bits.join(' · ');
+}
+function renderAlbumSearchResults() {
+  playlist = [];
+  albumSearchDetail = null;
+  if (!albumSearchResults.length) {
+    $results.innerHTML = '<div class="search-empty">没有找到相关专辑</div>';
+    $results.classList.add('show');
+    return;
+  }
+  var rows = albumSearchResults.map(function(album, i){
+    return '<div class="search-result netease-source" data-album-result="' + i + '">' +
+      '<div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0" onclick="openAlbumSearchDetail(' + i + ')">' +
+        searchThumbHtml(album.cover) +
+        '<div class="search-result-info"><div class="search-result-title">' + escHtml(album.name || '') + '<span class="tag-netease">专辑</span></div>' +
+        '<div class="search-result-meta">' + escHtml(albumSearchMetaText(album) || '网易云音乐') + '</div></div>' +
+      '</div>' +
+      '<button class="add-btn" title="查看专辑" onclick="event.stopPropagation();openAlbumSearchDetail(' + i + ')">›</button>' +
+    '</div>';
+  }).join('');
+  if (albumSearchHasMore) rows += '<button class="fx-mini-btn ghost album-search-more" type="button" onclick="loadMoreAlbumSearch()">加载更多</button>';
+  $results.innerHTML = rows;
+  $results.classList.add('show');
+  if (window.gsap) animateListItems($results, '.search-result', { x: 0, y: 6, stagger: 0.012, duration: 0.18, limit: 18 });
+}
+async function doAlbumSearch(q, append) {
+  q = String(q || '').trim();
+  if (!q) { renderSearchHistory(); return; }
+  var requestSeq = ++searchRequestSeq;
+  var offset = append ? albumSearchResults.length : 0;
+  if (!append) {
+    albumSearchResults = [];
+    $results.innerHTML = '<div class="search-empty">正在搜索专辑...</div>';
+    $results.classList.add('show');
+  }
+  try {
+    var data = await apiJson('/api/album/search?keywords=' + encodeURIComponent(q) + '&limit=12&offset=' + offset);
+    if (!MineradioAlbumSearch.isCurrentRequest(requestSeq, searchRequestSeq, q, $input.value, searchMode)) return;
+    var incoming = data && data.albums || [];
+    albumSearchResults = append ? albumSearchResults.concat(incoming) : incoming;
+    albumSearchHasMore = !!(data && data.hasMore);
+    searchLastResultQuery = searchResultKey(q, 'album');
+    rememberSearchQuery(q);
+    renderAlbumSearchResults();
+  } catch (err) {
+    console.warn('[AlbumSearch]', err);
+    if (requestSeq === searchRequestSeq && searchMode === 'album') {
+      $results.innerHTML = '<div class="search-empty">专辑搜索失败，请稍后重试</div>';
+      $results.classList.add('show');
+    }
+  }
+}
+function loadMoreAlbumSearch() {
+  if (!albumSearchHasMore || searchMode !== 'album') return;
+  doAlbumSearch($input.value.trim(), true);
+}
+function albumSearchTrackRows(detail) {
+  var tracks = detail && detail.tracks || [];
+  var limit = Math.min(tracks.length, detail.renderLimit || 30);
+  return tracks.slice(0, limit).map(function(song, i){
+    return '<div class="album-search-track"><span class="album-search-track-index">' + (i + 1) + '</span><span class="album-search-track-name">' + escHtml(song.name || '') + '</span><span class="search-result-meta">' + escHtml(song.artist || '') + '</span></div>';
+  }).join('') + (limit < tracks.length ? '<button class="fx-mini-btn ghost album-search-more" type="button" onclick="showMoreAlbumTracks()">显示更多曲目</button>' : '');
+}
+function renderAlbumSearchDetail() {
+  var detail = albumSearchDetail;
+  if (!detail) { renderAlbumSearchResults(); return; }
+  var album = detail.album || {};
+  var cover = album.cover ? '<img src="' + escHtml(coverUrlWithSize(album.cover, 160)) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:58px;height:58px;border-radius:9px;background:rgba(255,255,255,.06)"></div>';
+  $results.innerHTML = '<div class="album-search-detail">' +
+    '<div class="album-search-detail-head">' + cover + '<div class="search-result-info"><div class="search-result-title">' + escHtml(album.name || '') + '</div><div class="search-result-meta">' + escHtml(albumSearchMetaText(album)) + '</div></div>' +
+    '<div class="album-search-detail-actions"><button class="fx-mini-btn" type="button" onclick="playSearchedAlbum()">播放专辑</button><button class="fx-mini-btn ghost" type="button" onclick="appendSearchedAlbum()">加入队列</button></div></div>' +
+    albumSearchTrackRows(detail) + '<button class="fx-mini-btn ghost album-search-more" type="button" onclick="closeAlbumSearchDetail()">返回搜索结果</button></div>';
+  $results.classList.add('show');
+}
+async function openAlbumSearchDetail(index) {
+  var selected = albumSearchResults[index];
+  if (!selected || !selected.id) return;
+  var detailSeq = ++albumDetailRequestSeq;
+  $results.innerHTML = '<div class="search-empty">正在载入专辑曲目...</div>';
+  $results.classList.add('show');
+  try {
+    var data = await apiJson('/api/album/tracks?id=' + encodeURIComponent(selected.id));
+    if (detailSeq !== albumDetailRequestSeq || searchMode !== 'album') return;
+    var tracks = (data && data.tracks || []).map(cloneSong);
+    if (!tracks.length) {
+      $results.innerHTML = '<div class="search-empty">专辑暂无可播放歌曲<br><button class="fx-mini-btn ghost album-search-more" type="button" onclick="closeAlbumSearchDetail()">返回搜索结果</button></div>';
+      return;
+    }
+    albumSearchDetail = { album: Object.assign({}, selected, data.album || {}), tracks: tracks, renderLimit: 30 };
+    renderAlbumSearchDetail();
+  } catch (err) {
+    console.warn('[AlbumSearchDetail]', err);
+    if (detailSeq === albumDetailRequestSeq) $results.innerHTML = '<div class="search-empty">专辑加载失败<br><button class="fx-mini-btn ghost album-search-more" type="button" onclick="closeAlbumSearchDetail()">返回搜索结果</button></div>';
+  }
+}
+function closeAlbumSearchDetail() {
+  albumDetailRequestSeq++;
+  albumSearchDetail = null;
+  renderAlbumSearchResults();
+}
+function showMoreAlbumTracks() {
+  if (!albumSearchDetail) return;
+  albumSearchDetail.renderLimit = Math.min(albumSearchDetail.tracks.length, (albumSearchDetail.renderLimit || 30) + 30);
+  renderAlbumSearchDetail();
+}
+async function playSearchedAlbum() {
+  if (!albumSearchDetail || !albumSearchDetail.tracks.length) { showToast('专辑暂无可播放歌曲'); return; }
+  var next = MineradioAlbumSearch.replaceQueueWithAlbum(albumSearchDetail.tracks, cloneSong);
+  playQueue = next.queue;
+  currentIdx = next.currentIdx;
+  safeRenderQueuePanel('album-search-play');
+  safeSwitchPlaylistTab('queue', 'album-search-play');
+  safeShelfRebuild('album-search-play', true);
+  forcePlaybackControlsInteractive();
+  await playQueueAt(0);
+}
+function appendSearchedAlbum() {
+  if (!albumSearchDetail || !albumSearchDetail.tracks.length) { showToast('专辑暂无可播放歌曲'); return; }
+  var next = MineradioAlbumSearch.appendAlbumToQueue(playQueue, albumSearchDetail.tracks, currentIdx, cloneSong);
+  playQueue = next.queue;
+  currentIdx = next.currentIdx;
+  safeRenderQueuePanel('album-search-append');
+  safeShelfRebuild('album-search-append', true);
+  showToast('已追加 ' + next.added + ' 首歌曲到当前队列');
+}
+
 async function doSearch(q, opts) {
   opts = opts || {};
   q = String(q || '').trim();
@@ -18066,6 +18223,10 @@ async function doSearch(q, opts) {
   }
   if (searchMode === 'podcast') {
     doPodcastSearch(q);
+    return;
+  }
+  if (searchMode === 'album') {
+    doAlbumSearch(q, false);
     return;
   }
   var requestSeq = ++searchRequestSeq;

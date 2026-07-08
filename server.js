@@ -55,6 +55,7 @@ const tls = require('tls');
 const { once } = require('events');
 const { fileURLToPath } = require('url');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
+const { mapNeteaseAlbum } = require('./public/album-search');
 const {
   getPreferredReleaseAsset,
   getDefaultUpdateAssetName,
@@ -1717,6 +1718,17 @@ async function handleSearch(keywords, limit) {
   }
 
   return mapped;
+}
+
+async function handleAlbumSearch(keywords, limit, offset) {
+  const result = await cloudsearch({ keywords, type: 10, limit, offset, cookie: userCookie, timestamp: Date.now() });
+  const body = result && result.body || {};
+  const searchResult = body.result || {};
+  const albums = (Array.isArray(searchResult.albums) ? searchResult.albums : [])
+    .map(mapNeteaseAlbum)
+    .filter(item => item.id && item.name);
+  const total = Number(searchResult.albumCount || searchResult.total || albums.length) || albums.length;
+  return { albums, total, hasMore: offset + albums.length < total };
 }
 
 async function handleDiscoverHome() {
@@ -3476,6 +3488,20 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/album/search') {
+    try {
+      const kw = String(url.searchParams.get('keywords') || '').trim();
+      const limit = Math.max(6, Math.min(24, parseInt(url.searchParams.get('limit') || '12', 10) || 12));
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      if (!kw) { sendJSON(res, { albums: [], total: 0, hasMore: false }); return; }
+      sendJSON(res, await handleAlbumSearch(kw, limit, offset));
+    } catch (err) {
+      console.error('[AlbumSearch]', err);
+      sendJSON(res, { error: err.message, albums: [], total: 0, hasMore: false }, 500);
+    }
+    return;
+  }
+
   if (pn === '/api/qq/search') {
     try {
       const kw = url.searchParams.get('keywords') || '';
@@ -4250,8 +4276,6 @@ const server = http.createServer(async (req, res) => {
     try {
       const id = url.searchParams.get('id');
       if (!id) { sendJSON(res, { error: 'Missing album id', tracks: [] }, 400); return; }
-      const info = await requireLogin(res);
-      if (!info) return;
       const r = await album({ id, cookie: userCookie, timestamp: Date.now() });
       const body = (r && r.body) || {};
       const meta = body.album || {};
@@ -4263,6 +4287,7 @@ const server = http.createServer(async (req, res) => {
           cover: meta.picUrl || meta.blurPicUrl || '',
           artist: (meta.artist && meta.artist.name) || (meta.artists || []).map(a => a && a.name).filter(Boolean).join(' / '),
           size: meta.size || tracks.length,
+          publishTime: meta.publishTime || 0,
         },
         tracks,
       });
