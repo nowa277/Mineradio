@@ -5595,8 +5595,20 @@ var particlePointerFrame = { dirty:false, ndcX:0, ndcY:0 };
 var CLICK_THRESHOLD = 6;  // 像素, 拖动 > 6px 视为 drag
 var UI_HIT_SELECTOR = '#search-area,#top-right,#fullscreen-diy-zone,#fx-panel,#fx-fab,#fx-fab-hide-btn,#playlist-panel,#bottom-bar,#thumb-wrap,#empty-home,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip,#drop-overlay';
 
+function isMarsDroneBackgroundDragTarget(e) {
+  if (!(fx && fx.preset === MARS_DRONE_PRESET_INDEX) || !e) return false;
+  var el = document.elementFromPoint(e.clientX, e.clientY);
+  if (!el || !el.closest) return false;
+  if (el === renderer.domElement) return true;
+  if (el.id === 'visual-guide-scrim' || el.closest('#visual-guide-scrim')) return true;
+  var home = el.closest('#empty-home');
+  if (!home) return false;
+  return !el.closest('button,a,input,select,textarea,.home-card,.home-tile,.home-chip,.home-quick-row,.home-section-head');
+}
+
 function isPointerOverUi(e) {
   if (!e) return false;
+  if (isMarsDroneBackgroundDragTarget(e)) return false;
   var el = document.elementFromPoint(e.clientX, e.clientY);
   return !!(el && el.closest && el.closest(UI_HIT_SELECTOR));
 }
@@ -5666,7 +5678,7 @@ renderer.domElement.addEventListener('mousedown', function(e){
   beginParticlePointerDrag(e);
 });
 window.addEventListener('mousedown', function(e){
-  if (!(fx && fx.preset === SKULL_PRESET_INDEX)) return;
+  if (!(fx && (fx.preset === SKULL_PRESET_INDEX || fx.preset === MARS_DRONE_PRESET_INDEX))) return;
   if (orbit.rotating || e.target === renderer.domElement) return;
   beginParticlePointerDrag(e);
 }, true);
@@ -7149,7 +7161,7 @@ function ensureMarsDroneLayer() {
   marsDroneLayer = new MineradioDroneMainLayer(scene, { count: 24000, dotTexture: dotTexture, cycleSeconds: 11 });
   return marsDroneLayer;
 }
-function updateMarsDroneLayer(dt) {
+function updateMarsDroneLayer(dt, viewRotation) {
   var active = !!(fx && fx.preset === MARS_DRONE_PRESET_INDEX);
   if (active) ensureMarsDroneLayer();
   if (!marsDroneLayer) return;
@@ -7161,6 +7173,10 @@ function updateMarsDroneLayer(dt) {
     custom
   );
   marsDroneLayer.setActive(active);
+  if (active && marsDroneLayer.setViewRotation) {
+    viewRotation = viewRotation || { x: 0, y: 0 };
+    marsDroneLayer.setViewRotation(viewRotation.x, viewRotation.y, .055);
+  }
   marsDroneLayer.update(dt, {
     bass: bass,
     beat: beatPulse,
@@ -25756,6 +25772,7 @@ function rebaseParticleRotationAxis(axis) {
   if (bloomParticles) bloomParticles.rotation[axis] -= offset;
   if (floatGroup) floatGroup.rotation[axis] -= offset;
   if (backCoverGroup) backCoverGroup.rotation[axis] -= offset;
+  if (marsDroneLayer && marsDroneLayer.group) marsDroneLayer.group.rotation[axis] -= offset;
   if (skullParticleGroup) skullParticleGroup.rotation[axis] -= offset;
   if (stageLyrics.group) stageLyrics.group.rotation[axis] -= offset;
 }
@@ -27807,7 +27824,7 @@ function animate() {
     backCoverGroup.rotation.copy(particles.rotation);
   }
   updateSkullParticleLayer(dt);
-  updateMarsDroneLayer(dt);
+  updateMarsDroneLayer(dt, { x: targetRotX, y: targetRotY });
   updateStageLyrics3D(dt);
   syncDesktopOverlayState();
 

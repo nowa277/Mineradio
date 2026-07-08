@@ -204,8 +204,12 @@
     this.uniforms.uColorA.value.lerp(this.targetColors[0], Math.min(1, dt * .72));
     this.uniforms.uColorB.value.lerp(this.targetColors[1], Math.min(1, dt * .72));
     this.uniforms.uColorC.value.lerp(this.targetColors[2], Math.min(1, dt * .72));
-    this.group.rotation.y += (0 - this.group.rotation.y) * Math.min(1, dt * 3.6);
-    this.group.rotation.x += (0 - this.group.rotation.x) * Math.min(1, dt * 3.6);
+  };
+
+  DroneMainLayer.prototype.setViewRotation = function(x, y, ease) {
+    ease = ease == null ? .055 : Math.max(0, Math.min(1, Number(ease) || 0));
+    this.group.rotation.x += ((Number(x) || 0) - this.group.rotation.x) * ease;
+    this.group.rotation.y += ((Number(y) || 0) - this.group.rotation.y) * ease;
   };
 
   DroneMainLayer.prototype.destroy = function() {

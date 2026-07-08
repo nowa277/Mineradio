@@ -93,3 +93,18 @@ test('正式火星灯光秀仅轮播三幅已验收图案', () => {
   assert.equal(mainLayer.nextPatternIndex(1), 2);
   assert.equal(mainLayer.nextPatternIndex(2), 0);
 });
+
+test('火星灯光秀正式层复用主视觉拖拽旋转', () => {
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '../public/drone-main-layer.js'), 'utf8');
+  const indexSource = require('node:fs').readFileSync(require('node:path').join(__dirname, '../public/index.html'), 'utf8');
+  assert.match(source, /setViewRotation/);
+  assert.doesNotMatch(source, /group\.rotation\.y \+= \(0 - this\.group\.rotation\.y\)/);
+  assert.match(indexSource, /updateMarsDroneLayer\(dt, \{ x: targetRotX, y: targetRotY \}\)/);
+});
+
+test('火星灯光秀允许从 Home 背景拖拽查看', () => {
+  const indexSource = require('node:fs').readFileSync(require('node:path').join(__dirname, '../public/index.html'), 'utf8');
+  assert.match(indexSource, /function isMarsDroneBackgroundDragTarget/);
+  assert.match(indexSource, /fx\.preset === SKULL_PRESET_INDEX \|\| fx\.preset === MARS_DRONE_PRESET_INDEX/);
+  assert.match(indexSource, /#empty-home/);
+});
