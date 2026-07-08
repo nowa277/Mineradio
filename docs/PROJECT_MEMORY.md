@@ -176,6 +176,13 @@
 
 ## Memory Entries
 
+### 2026-07-07 - 火星灯光秀首图造型与密度边界
+
+- 用户认可/要求保留：`MARS CONCERT` 当前版本已最终验收为“完美”；整体形状、真正面填充、清晰白边、文字尖角和斜笔交汇细节全部保持，不再随意调整。
+- 涉及文件：`public/drone-preview.html`、`public/drone-show.js`、`public/drone-patterns.js`、`public/drone-mars-reference.js`、`docs/DRONE_LIGHT_SHOW_DESIGN.md`。
+- 关键参数/实现：最终预览密度约 24,000 粒子；文字区域放大约 15%；白边、文字填充和徽标填充使用独立采样权重；文字按黑色字面与白边邻域提取，避免尖角开口导致漏填；专辑色在封面调色板多个主色间平滑流动。
+- 禁止回退或改坏的点：不要改动已验收的 `MARS CONCERT` 外形、大小和粒子分配；不要恢复 30,000 粒子的过密填充；白边不能被填充吞掉；不能只留空心线框，也不能把倒三角负空间错误填满；专辑换色不能突变闪烁。
+
 ### 2026-07-06 - 多行舞台歌词与收藏专辑
 
 - 用户认可/要求保留：应用内歌词采用当前行突出、上下文连续、多行平滑滚动的舞台效果；翻译与罗马音共用一个字号调节；网易云收藏专辑可从左侧资料库和 Home 页进入。
@@ -429,3 +436,31 @@
   1. 保证 `calculatedOffsets` 计算中的排序逻辑（下推行由小到大排序，上推行由大到小排序）不乱，避免计算前置位置错误。
   2. 预览行的翻译/罗马音隐藏时，不要硬性将 uOpacity 设为常量 0，而是要通过 `tickPreviewMesh` 中 `subOpacityTarget = 0` 的平滑 ease 过渡，避免切歌或开关时的视觉闪烁。
   3. 不要影响 “多行舞台歌词” 开关（`stageLyricMultiline`）和 “强制单行显示” 开关（`stageLyricForceSingleLine`）的原有职责。
+
+### 2026-07-07 - 火星灯光秀玫瑰花束验收边界
+
+- 用户认可/要求保留：第二张“玫瑰花束”图案已确认满意；保持参考图中的八朵不规则玫瑰、三束汇聚的 S 形青色花茎、白色星芒及深红/洋红灯点质感。
+- 涉及文件：`public/drone-rose-reference.js`、`public/drone-patterns.js`、`public/drone-show.js`、`public/drone-preview.html`、`test/drone-patterns.test.js`、`docs/DRONE_LIGHT_SHOW_DESIGN.md`。
+- 关键参数/实现：从用户参考图提取实际高亮轨迹，花瓣使用 HSV `s > 0.48`、`v > 0.42` 且红/洋红色相；花茎使用青绿色相并排除顶部城市灯光；参考色为 `#e60046` 与 `#20e2ae`；24,000 粒子下分组权重约为星芒 4%、花瓣 76%、花茎 20%，实测约 60 FPS。
+- 禁止回退或改坏的点：不要改回规则同心波纹花瓣、放射状直花茎或大面积实心光晕；不要改变当前八朵花的位置、比例和三束花茎走势；后续图案扩展不得修改已验收的 MARS 与玫瑰资源。
+
+### 2026-07-07 - 火星灯光秀人物与猫验收边界
+
+- 用户认可/要求保留：第三张“人物与猫”图案已确认“非常完美”；保持参考图中的背影人物、发丝、垂落手臂、坐姿、猫耳、猫身和弯曲尾巴轮廓。
+- 涉及文件：`public/drone-person-cat-reference.js`、`public/drone-patterns.js`、`public/drone-show.js`、`public/drone-preview.html`、`test/drone-patterns.test.js`、`docs/DRONE_LIGHT_SHOW_DESIGN.md`。
+- 关键参数/实现：使用参考图约 2,624 个高亮轨迹点；人物与猫分别使用分组 1/2，重采样权重约 68%/32%；X/Y 坐标比例均约 `0.037`，保持原始宽高比；参考色为人物暖金 `#8c571f`、猫深红 `#ad001f`；该图案独立 `pointSize = 1.30`，24,000 粒子下约 61 FPS。
+- 禁止回退或改坏的点：不要再次把构图纵向拉长或横向压窄；不要让高亮叠加把人物与猫都洗成白色；不要恢复粗大连续灯线；后续图案不得修改该图案坐标、颜色、比例和粒子尺寸。
+
+### 2026-07-07 - 火星灯光秀首版收束范围
+
+- 用户决定：当前版本只把三幅已验收图案加入正式“火星灯光秀”预设，分别为 `MARS CONCERT`、玫瑰花束、人物与猫；星群、鲸鱼/动物等扩展下次继续。
+- 涉及文件：`public/index.html`、`public/drone-main-layer.js`、`public/drone-patterns.js`、三份 `drone-*-reference.js`、`test/drone-patterns.test.js`、`docs/DRONE_LIGHT_SHOW_DESIGN.md`。
+- 关键参数/实现：视觉控制台新增预设索引 7；正式层固定 24,000 点，约 11 秒轮播、1.45 秒 GPU 换形；低频与强拍控制呼吸；专辑主辅色平滑混入内置参考色；正式舞台缩放约 `0.34`、Y 偏移约 `0.30`。
+- 禁止回退或改坏的点：当前版本不要再追加第四幅图；不要修改三幅已验收图案的原始轨迹；不要为切图重复创建无法释放的 WebGL 资源；不要影响电影视觉系统及旧预设编号。
+
+### 2026-07-08 - 火星灯光秀镜头上下翻转验收
+
+- 用户认可/要求保留：无人机灯光秀预览页的上下翻转镜头效果已确认“效果不错”，可以正式加入当前版本。
+- 涉及文件：`public/drone-show.js`、`public/drone-preview.html`、`docs/DRONE_LIGHT_SHOW_DESIGN.md`、`CHANGELOG.md`。
+- 关键参数/实现：`yaw` 继续无限累积；`pitch` 放宽到接近 `±Math.PI`，范围为 `-Math.PI + 0.035` 到 `Math.PI - 0.035`；翻转到背面后根据 `Math.cos(pitch)` 切换 `camera.up.y`，避免上下越过极点后画面倒置导致操作方向混乱；预览页通过 `document.body.dataset.pitch` 暴露角度供自动验证。
+- 禁止回退或改坏的点：不要再把预览镜头限制回轻微俯仰；水平 360°、垂直上下翻转、滚轮缩放和双击回正必须同时保留；粒子继续使用圆润点贴图和 NormalBlending，不要恢复伪球面高光、加法叠光、长条、椭圆片或雾团质感。

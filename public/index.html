@@ -10,6 +10,12 @@
 <script src="vendor/music-tempo.min.js"></script>
 <script src="vendor/gsap.min.js"></script>
 <script src="stage-lyrics-window.js"></script>
+<script src="drone-mars-reference.js"></script>
+<script src="drone-mars-fill.js"></script>
+<script src="drone-rose-reference.js"></script>
+<script src="drone-person-cat-reference.js"></script>
+<script src="drone-patterns.js"></script>
+<script src="drone-main-layer.js"></script>
 <script>
 try {
   document.documentElement.classList.add(localStorage.getItem('mineradio-diy-player-mode-v1') === '1' ? 'diy-mode-preload' : 'simple-mode-preload');
@@ -1087,6 +1093,8 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode{left:50%;width:min(1080px,cal
 .preset-card[data-preset="6"] .pc-yui7w{color:#3257f7;font-family:"Microsoft Yi Baiti","SimHei","Microsoft YaHei",sans-serif;font-weight:900;font-style:italic;letter-spacing:.7px}
 .preset-card[data-preset="6"] .pc-icon{color:#3257f7}
 .preset-card[data-preset="6"].active .pc-icon{color:#3257f7!important;text-shadow:0 0 12px rgba(50,87,247,.44)}
+.preset-card[data-preset="7"] .pc-icon{color:#ff665f}
+.preset-card[data-preset="7"].active .pc-icon{color:#ff7a72!important;text-shadow:0 0 14px rgba(255,74,64,.42)}
 .preset-card .pc-bg{position:absolute;inset:0;opacity:.35;pointer-events:none}
 @keyframes preset-card-pulse{0%{opacity:0;transform:scale(.6) rotate(0deg)}35%{opacity:1}100%{opacity:0;transform:scale(1.25) rotate(12deg)}}
 .user-archive-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:0 0 12px}
@@ -3431,7 +3439,7 @@ function readSavedPlaybackVisualPreset() {
   try {
     var raw = JSON.parse(localStorage.getItem(LYRIC_LAYOUT_STORE_KEY) || '{}') || {};
     if (!Object.prototype.hasOwnProperty.call(raw, 'preset')) return fxDefaults.preset;
-    var savedPreset = clampRange(Number(raw.preset) || 0, 0, 6);
+    var savedPreset = clampRange(Number(raw.preset) || 0, 0, 7);
     if (savedPreset === 3 && raw.visualPresetSchema !== VISUAL_PRESET_SCHEMA) savedPreset = 5;
     return savedPreset;
   } catch (e) {
@@ -6584,6 +6592,7 @@ function destroyFloatLayer() {
 //  安魂 — 3D 粒子建模层
 // ============================================================
 var SKULL_PRESET_INDEX = 6;
+var MARS_DRONE_PRESET_INDEX = 7;
 var SKULL_MODEL_BASE_ROTATION_X = -0.26;
 var SKULL_MODEL_BASE_ROTATION_Y = 0.00;
 var SKULL_MODEL_SCALE = 2.34;
@@ -7119,6 +7128,35 @@ function updateSkullParticleLayer(dt) {
 }
 
 // ============================================================
+//  火星灯光秀 — 三幅已验收无人机图案
+// ============================================================
+var marsDroneLayer = null;
+function ensureMarsDroneLayer() {
+  if (marsDroneLayer || typeof MineradioDroneMainLayer !== 'function') return marsDroneLayer;
+  marsDroneLayer = new MineradioDroneMainLayer(scene, { count: 24000, dotTexture: dotTexture, cycleSeconds: 11 });
+  return marsDroneLayer;
+}
+function updateMarsDroneLayer(dt) {
+  var active = !!(fx && fx.preset === MARS_DRONE_PRESET_INDEX);
+  if (active) ensureMarsDroneLayer();
+  if (!marsDroneLayer) return;
+  var pal = stageLyrics && (stageLyrics.coverPalette || stageLyrics.palette) || {};
+  var custom = fx.visualTintMode === 'custom';
+  marsDroneLayer.setTint(
+    custom ? fx.visualTintColor : (pal.primary || fx.visualTintColor),
+    custom ? fx.visualTintColor : (pal.secondary || pal.highlight || pal.primary || fx.visualTintColor),
+    custom
+  );
+  marsDroneLayer.setActive(active);
+  marsDroneLayer.update(dt, {
+    bass: bass,
+    beat: beatPulse,
+    energy: audioEnergy,
+    pixelRatio: renderer.getPixelRatio()
+  });
+}
+
+// ============================================================
 //  封面背面粒子层 (v7.2)
 //   - 独立 Points, 放在 z=-1.5 (主封面平面背面)
 //   - 颜色取自封面镜像 UV
@@ -7603,7 +7641,7 @@ function readSavedLyricLayout() {
   try {
     var savedLayoutRaw = localStorage.getItem(LYRIC_LAYOUT_STORE_KEY);
     var raw = savedLayoutRaw ? (JSON.parse(savedLayoutRaw) || {}) : packagedDefaultLyricLayoutRaw();
-    var savedPreset = clampRange(Number(raw.preset) || 0, 0, 6);
+    var savedPreset = clampRange(Number(raw.preset) || 0, 0, 7);
     if (savedPreset === 3 && raw.visualPresetSchema !== VISUAL_PRESET_SCHEMA) {
       savedPreset = 5;
     }
@@ -20767,6 +20805,7 @@ var presetMeta = [
   { name: '唱片', desc: '唱片 · 圆形封面' },
   { name: '星河', desc: '壁纸粒子 · 音乐律动' },
   { name: '安魂', desc: '骷髅·YUI7W', descHtml: '骷髅·<span class="pc-yui7w">YUI7W</span>' },
+  { name: '火星灯光秀', desc: '无人机阵列 · 三幕轮播' },
 ];
 var presetIcons = [
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 14c3-2 5-2 8 0s5 2 8 0M3 10c3-2 5-2 8 0s5 2 8 0M3 18c3-2 5-2 8 0s5 2 8 0"/></svg>',
@@ -20776,8 +20815,9 @@ var presetIcons = [
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.4"/><path d="M16.5 5.2c2.1.9 3.4 2.4 4 4.5"/><path d="M18.8 3.2l1.5 4.8"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 15c2.2-4.4 4.4-4.4 6.6 0s4.4 4.4 6.6 0S20.6 10.6 23 15"/><path d="M3 9c2.2 2.2 4.4 2.2 6.6 0s4.4-2.2 6.6 0S20.6 11.2 23 9"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.2h4v6.2h4.2v3.8H14v7.6h-4v-7.6H5.8V9.4H10z"/></svg>',
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16L12 18 4 7z"/><path d="M7 10h10l-5 6-5-6z"/><path d="M12 7v14"/><circle cx="5" cy="5" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1" fill="currentColor" stroke="none"/></svg>',
 ];
-var presetDisplayOrder = [0, 6, 5, 4, 2, 1, 3];
+var presetDisplayOrder = [0, 6, 7, 5, 4, 2, 1, 3];
 var lyricColorPresets = [
   { name:'雾蓝', color:'#a9b8c8' },
   { name:'银蓝', color:'#9db8cf' },
@@ -21950,6 +21990,7 @@ function setPreset(p, opts) {
   fx.preset = p;
   if (changed && prev === SKULL_PRESET_INDEX && p !== SKULL_PRESET_INDEX) clearSkullPresetResidue();
   if (p === SKULL_PRESET_INDEX) loadSkullParticleAsset();
+  if (p === MARS_DRONE_PRESET_INDEX) ensureMarsDroneLayer();
   uniforms.uPreset.value = p;
   refreshPresetGrid();
   if (changed && !opts.skipTransition) triggerPresetParticleTransition(prev, p);
@@ -21961,6 +22002,7 @@ function setPreset(p, opts) {
     else if (p === 4) { orbit.userRadius = 6.5; orbit.userPhi = 0.04; orbit.userTheta = 0.0; orbit.baselineRadius = 6.5; orbit.baselinePhi = 0.04; }
     else if (p === 5) { orbit.userRadius = 9.4; orbit.userPhi = 0.34; orbit.userTheta = -0.52; orbit.baselineRadius = 9.4; orbit.baselinePhi = 0.34; }
     else if (p === 6) { orbit.userRadius = 7.4; orbit.userPhi = 0.10; orbit.userTheta = 0.18; orbit.baselineRadius = 7.4; orbit.baselinePhi = 0.10; }
+    else if (p === 7) { orbit.userRadius = 6.8; orbit.userPhi = 0.04; orbit.userTheta = 0.0; orbit.baselineRadius = 6.8; orbit.baselinePhi = 0.04; }
     else              { orbit.userRadius = 6.6; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 6.6; orbit.baselinePhi = 0.08; }
     orbit.baselineTheta = p === 5 ? -0.52 : (p === 6 ? 0.18 : 0.0);
   }
@@ -27584,10 +27626,11 @@ function animate() {
   // v7.2 旋转 = 头部+眼球追踪 + 鼠标/手势拖动 + 惯性
   tickGestureRotation(dt);
   var skullPresetActive = fx && fx.preset === SKULL_PRESET_INDEX;
-  particles.visible = !skullPresetActive;
-  if (bloomParticles) bloomParticles.visible = !skullPresetActive && fx.bloom && fx.bloomStrength > 0.01;
-  if (floatGroup) floatGroup.visible = !skullPresetActive;
-  if (backCoverGroup) backCoverGroup.visible = !skullPresetActive;
+  var marsDronePresetActive = fx && fx.preset === MARS_DRONE_PRESET_INDEX;
+  particles.visible = !skullPresetActive && !marsDronePresetActive;
+  if (bloomParticles) bloomParticles.visible = !skullPresetActive && !marsDronePresetActive && fx.bloom && fx.bloomStrength > 0.01;
+  if (floatGroup) floatGroup.visible = !skullPresetActive && !marsDronePresetActive;
+  if (backCoverGroup) backCoverGroup.visible = !skullPresetActive && !marsDronePresetActive;
   var targetRotY = orbit.centerLocked ? 0 : (headParallax.active ? headParallax.x * 0.5 : 0) + gestureRotation.y;
   var targetRotX = orbit.centerLocked ? 0 : (headParallax.active ? -headParallax.y * 0.35 : 0) + gestureRotation.x;
   particles.rotation.y += (targetRotY - particles.rotation.y) * 0.055;
@@ -27603,6 +27646,7 @@ function animate() {
     backCoverGroup.rotation.copy(particles.rotation);
   }
   updateSkullParticleLayer(dt);
+  updateMarsDroneLayer(dt);
   updateStageLyrics3D(dt);
   syncDesktopOverlayState();
 

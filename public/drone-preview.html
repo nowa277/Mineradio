@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>火星灯光秀 · 无人机图案预览</title>
+<script src="vendor/three.r128.min.js"></script>
+<script src="drone-mars-reference.js"></script>
+<script src="drone-mars-fill.js"></script>
+<script src="drone-rose-reference.js"></script>
+<script src="drone-person-cat-reference.js"></script>
+<script src="drone-patterns.js"></script>
+<script src="drone-show.js"></script>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#020102;color:#f7f0ec;font-family:"Noto Sans SC","PingFang SC",sans-serif}body:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 30%,rgba(102,8,12,.14),transparent 42%),linear-gradient(180deg,rgba(20,3,5,.18),transparent 40%);z-index:1}canvas{display:block;width:100%;height:100%}.title{position:fixed;z-index:3;left:28px;top:24px;letter-spacing:.16em;text-transform:uppercase}.title strong{display:block;font-family:Georgia,serif;font-size:14px;letter-spacing:.24em}.title span{display:block;margin-top:7px;color:rgba(255,235,228,.42);font-size:10px}.status{position:fixed;z-index:3;right:26px;top:24px;display:flex;align-items:center;gap:8px;color:rgba(255,241,235,.52);font:10px ui-monospace,monospace;letter-spacing:.10em}.status:before{content:"";width:6px;height:6px;border-radius:50%;background:#ff554d;box-shadow:0 0 14px rgba(255,62,53,.88)}.controls{position:fixed;z-index:3;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:end;gap:12px;padding:12px 14px;border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(8,5,7,.68);box-shadow:0 20px 60px rgba(0,0,0,.48),inset 0 1px rgba(255,255,255,.06);backdrop-filter:blur(20px) saturate(1.25)}label{display:grid;gap:6px;color:rgba(255,241,235,.46);font-size:9px;letter-spacing:.10em;text-transform:uppercase}input[type=range]{width:110px;accent-color:#ff5149}input[type=color]{width:38px;height:28px;padding:2px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#111}button,select{height:30px;padding:0 12px;border:1px solid rgba(255,255,255,.11);border-radius:9px;background:rgba(255,255,255,.045);color:#f8efea;font:11px inherit;cursor:pointer}button:hover,select:hover{border-color:rgba(255,92,82,.46);background:rgba(255,72,62,.09)}button.primary{border-color:rgba(255,87,77,.42);background:rgba(255,74,64,.13);box-shadow:0 0 20px rgba(255,55,45,.08)}.value{color:rgba(255,244,239,.82);font:10px ui-monospace,monospace}@media(max-width:720px){.controls{width:calc(100% - 24px);flex-wrap:wrap;justify-content:center}.title{left:18px}.status{right:18px}input[type=range]{width:90px}}
+</style>
+</head>
+<body>
+<canvas id="stage" aria-label="无人机灯光秀预览"></canvas>
+<div class="title"><strong>火星灯光秀</strong><span id="pattern-title">星群 · PATTERN 04</span></div>
+<div class="status" id="fps">拖动画布水平/上下翻转 · 滚轮缩放 · 双击回正</div>
+<div class="controls">
+  <button id="toggle" class="primary" type="button">暂停节拍</button>
+  <label>图案<select id="pattern"><option value="mars">MARS CONCERT</option><option value="rose">玫瑰花束</option><option value="person-cat">人物与猫</option><option value="stars" selected>星群</option></select></label>
+  <label>BPM <span class="value" id="bpm-value">120</span><input id="bpm" type="range" min="60" max="180" value="120"></label>
+  <label>节拍强度 <span class="value" id="energy-value">68%</span><input id="energy" type="range" min="0" max="100" value="68"></label>
+  <label>缩放 <span class="value" id="zoom-value">19</span><input id="zoom" type="range" min="6" max="34" value="19" step="0.1"></label>
+  <button id="hit" type="button">触发强拍</button>
+  <label>颜色模式<select id="color-mode"><option value="reference" selected>参考色</option><option value="custom">自定义色</option><option value="album">专辑色流动</option></select></label>
+  <label>颜色<input id="color" type="color" value="#ff4d48"></label>
+</div>
+<script>
+(function(){
+  var canvas=document.getElementById('stage');
+  var show=new MineradioDroneShow(canvas,{count:24000});
+  window.__dronePreviewShow=show;
+  var bpm=document.getElementById('bpm'),energy=document.getElementById('energy'),zoom=document.getElementById('zoom');
+  var mode=document.getElementById('color-mode'),color=document.getElementById('color');
+  var pattern=document.getElementById('pattern'),patternTitle=document.getElementById('pattern-title');
+  var toggle=document.getElementById('toggle'),running=true,last=performance.now(),beatClock=0;
+  var frames=0,fpsAt=last,fps=document.getElementById('fps');
+  function resize(){show.resize()} window.addEventListener('resize',resize);
+  function syncColor(){show.setColorMode(mode.value,color.value)}
+  function syncZoomLabel(value){document.getElementById('zoom-value').textContent=String(Math.round(Number(value)||show.getZoom()))}
+  show.onZoomChange=function(value){zoom.value=String(value);syncZoomLabel(value)};
+  bpm.addEventListener('input',function(){document.getElementById('bpm-value').textContent=bpm.value});
+  energy.addEventListener('input',function(){document.getElementById('energy-value').textContent=energy.value+'%';show.setEnergy(energy.value/100)});
+  zoom.addEventListener('input',function(){show.setZoom(zoom.value);syncZoomLabel(zoom.value)});
+  mode.addEventListener('change',syncColor);color.addEventListener('input',syncColor);
+  pattern.addEventListener('change',function(){
+    if(pattern.value==='stars'){
+      show.setPattern(MineradioDronePatterns.starConstellation(.052));
+      patternTitle.textContent='星群 · PATTERN 04';
+    }else if(pattern.value==='person-cat'){
+      show.setPattern(MineradioDronePatterns.personAndCat());
+      patternTitle.textContent='人物与猫 · PATTERN 03';
+    }else if(pattern.value==='rose'){
+      show.setPattern(MineradioDronePatterns.roseBouquet(.052));
+      patternTitle.textContent='玫瑰花束 · PATTERN 02';
+    }else{
+      show.setPattern(MineradioDronePatterns.marsConcert(.052));
+      patternTitle.textContent='MARS CONCERT · PATTERN 01';
+    }
+  });
+  document.getElementById('hit').addEventListener('click',function(){show.hit(energy.value/100)});
+  toggle.addEventListener('click',function(){running=!running;toggle.textContent=running?'暂停节拍':'继续节拍'});
+  function frame(now){
+    var dt=Math.min(.05,(now-last)/1000);last=now;beatClock+=dt;
+    var interval=60/Number(bpm.value);
+    if(running&&beatClock>=interval){beatClock%=interval;show.hit(energy.value/100)}
+    show.render(dt);frames++;
+    document.body.dataset.yaw=show.cameraOrbit.yaw.toFixed(4);
+    document.body.dataset.pitch=show.cameraOrbit.pitch.toFixed(4);
+    document.body.dataset.radius=show.cameraOrbit.radius.toFixed(2);
+    if(now-fpsAt>1000){fps.textContent='24,000 DRONES · '+Math.round(frames*1000/(now-fpsAt))+' FPS';frames=0;fpsAt=now}
+    requestAnimationFrame(frame)
+  }
+  show.setEnergy(.68);
+  show.setZoom(18.8);
+  syncZoomLabel(18.8);
+  show.setAlbumPalette(['#ff4d48','#ff9a55','#ef5f9a','#7d8fff','#42c7c4']);
+  show.setPattern(MineradioDronePatterns.starConstellation(.052));
+  syncColor();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
